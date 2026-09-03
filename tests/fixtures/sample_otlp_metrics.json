@@ -1,0 +1,48 @@
+{
+  "resourceMetrics": [
+    {
+      "resource": {
+        "attributes": [
+          {"key": "service.name", "value": {"stringValue": "demo-store"}},
+          {"key": "deployment.environment", "value": {"stringValue": "production"}}
+        ]
+      },
+      "scopeMetrics": [
+        {
+          "metrics": [
+            {
+              "name": "http.server.request.duration",
+              "unit": "s",
+              "histogram": {
+                "dataPoints": [
+                  {
+                    "attributes": [
+                      {"key": "http.method", "value": {"stringValue": "POST"}},
+                      {"key": "http.route",  "value": {"stringValue": "/api/orders"}}
+                    ],
+                    "timeUnixNano": "1725350460000000000",
+                    "count": "10",
+                    "sum": 43.2
+                  }
+                ]
+              }
+            },
+            {
+              "name": "http.request.error_count",
+              "unit": "",
+              "sum": {
+                "dataPoints": [
+                  {
+                    "attributes": [{"key": "http.status_code", "value": {"stringValue": "429"}}],
+                    "timeUnixNano": "1725350460000000000",
+                    "asDouble": 25
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,180 @@
+version: "3.9"
+
+services:
+  # ─── Message Broker (Kafka-compatible, single binary) ────────────────────────
+  redpanda:
+    image: redpandadata/redpanda:latest
+    container_name: faultlens-redpanda
+    command:
+      - redpanda
+      - start
+      - --overprovisioned
+      - --smp 1
+      - --memory 512M
+      - --reserve-memory 0M
+      - --node-id 0
+      - --check=false
+      - --kafka-addr internal://0.0.0.0:9092,external://0.0.0.0:19092
+      - --advertise-kafka-addr internal://redpanda:9092,external://localhost:19092
+      - --schema-registry-addr http://0.0.0.0:8081
+      - --rpc-addr redpanda:33145
+      - --advertise-rpc-addr redpanda:33145
+    ports:
+      - "19092:19092"  # external Kafka API
+      - "9092:9092"    # internal Kafka API
+      - "8081:8081"    # schema registry
+      - "9644:9644"    # admin API
+    volumes:
+      - redpanda_data:/var/lib/redpanda/data
+    healthcheck:
+      test: ["CMD-SHELL", "rpk cluster health | grep -E 'Healthy:.*true' || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+
+  # ─── Time-Series DB (metrics) ─────────────────────────────────────────────────
+  timescaledb:
+    image: timescale/timescaledb:latest-pg16
+    container_name: faultlens-timescale
+    environment:
+      POSTGRES_USER: faultlens
+      POSTGRES_PASSWORD: faultlens
+      POSTGRES_DB: faultlens_metrics
+    ports:
+      - "5432:5432"
+    volumes:
+      - timescale_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U faultlens -d faultlens_metrics"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # ─── Search + Log Store ────────────────────────────────────────────────────────
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.15.0
+    container_name: faultlens-elasticsearch
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+      - cluster.routing.allocation.disk.threshold_enabled=false
+    ports:
+      - "9200:9200"
+      - "9300:9300"
+    volumes:
+      - es_data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9200/_cluster/health | grep -v '\"status\":\"red\"' || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 15
+      start_period: 60s
+
+  # ─── Graph DB (service dependency + causal graph) ────────────────────────────
+  neo4j:
+    image: neo4j:5
+    container_name: faultlens-neo4j
+    environment:
+      NEO4J_AUTH: neo4j/faultlens123
+      NEO4J_PLUGINS: '["apoc"]'
+      NEO4J_dbms_memory_heap_max__size: 512M
+      NEO4J_dbms_memory_pagecache_size: 256M
+    ports:
+      - "7474:7474"   # browser UI
+      - "7687:7687"   # bolt protocol
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:7474 || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 15
+      start_period: 60s
+
+  # ─── Relational DB (incidents + agent state/checkpoints) ─────────────────────
+  postgres:
+    image: postgres:16
+    container_name: faultlens-postgres
+    environment:
+      POSTGRES_USER: faultlens
+      POSTGRES_PASSWORD: faultlens
+      POSTGRES_DB: faultlens
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U faultlens -d faultlens"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # ─── Ingestion API ────────────────────────────────────────────────────────────
+  ingestion:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: faultlens-ingestion
+    command: uvicorn ingestion.main:app --host 0.0.0.0 --port 8000 --reload
+    ports:
+      - "8000:8000"
+    env_file: .env
+    environment:
+      - KAFKA_BOOTSTRAP_SERVERS=redpanda:9092
+      - TIMESCALE_URL=postgresql+asyncpg://faultlens:faultlens@timescaledb:5432/faultlens_metrics
+      - TIMESCALE_SYNC_URL=postgresql://faultlens:faultlens@timescaledb:5432/faultlens_metrics
+      - ELASTICSEARCH_URL=http://elasticsearch:9200
+      - NEO4J_URI=bolt://neo4j:7687
+      - POSTGRES_URL=postgresql+asyncpg://faultlens:faultlens@postgres:5432/faultlens
+      - POSTGRES_SYNC_URL=postgresql://faultlens:faultlens@postgres:5432/faultlens
+    depends_on:
+      redpanda:
+        condition: service_healthy
+      timescaledb:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
+      neo4j:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    volumes:
+      - .:/app
+    working_dir: /app
+
+  # ─── Agent Worker (LangGraph scheduler) ──────────────────────────────────────
+  agent-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: faultlens-agent-worker
+    command: python -m agents.worker
+    env_file: .env
+    environment:
+      - KAFKA_BOOTSTRAP_SERVERS=redpanda:9092
+      - TIMESCALE_URL=postgresql+asyncpg://faultlens:faultlens@timescaledb:5432/faultlens_metrics
+      - TIMESCALE_SYNC_URL=postgresql://faultlens:faultlens@timescaledb:5432/faultlens_metrics
+      - ELASTICSEARCH_URL=http://elasticsearch:9200
+      - NEO4J_URI=bolt://neo4j:7687
+      - POSTGRES_URL=postgresql+asyncpg://faultlens:faultlens@postgres:5432/faultlens
+      - POSTGRES_SYNC_URL=postgresql://faultlens:faultlens@postgres:5432/faultlens
+      - OLLAMA_BASE_URL=http://host.docker.internal:11434
+    depends_on:
+      ingestion:
+        condition: service_started
+    volumes:
+      - .:/app
+    working_dir: /app
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+volumes:
+  redpanda_data:
+  timescale_data:
+  es_data:
+  neo4j_data:
+  neo4j_logs:
+  postgres_data:

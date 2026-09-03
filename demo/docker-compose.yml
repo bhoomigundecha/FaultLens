@@ -1,0 +1,195 @@
+version: "3.9"
+
+# ── ShopFlow — Production-grade multi-service e-commerce demo ──────────────────
+# Service topology:
+#   Browser/Load-Gen → api-gateway:3000
+#                        ├──→ order-service:3001  ──→ inventory-service:3002 (Redis + PG)
+#                        │                         └──→ payment-service:3003
+#                        ├──→ inventory-service:3002
+#                        └──→ ai-service:3004 (Ollama)
+#
+# All services export OTel signals → otel-collector → FaultLens ingestion API
+
+x-otel-env: &otel-env
+  OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+  OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+
+x-db-env: &db-env
+  DB_HOST: shopflow-postgres
+  DB_PORT: 5432
+  DB_USER: shopflow
+  DB_PASSWORD: shopflow123
+  DB_NAME: shopflow
+
+services:
+  # ── Databases ────────────────────────────────────────────────────────────────
+  shopflow-postgres:
+    image: postgres:16
+    container_name: shopflow-postgres
+    environment:
+      POSTGRES_USER: shopflow
+      POSTGRES_PASSWORD: shopflow123
+      POSTGRES_DB: shopflow
+    ports:
+      - "5434:5432"
+    volumes:
+      - shopflow_pg_data:/var/lib/postgresql/data
+      - ./init-db:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U shopflow -d shopflow"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+
+  shopflow-redis:
+    image: redis:7-alpine
+    container_name: shopflow-redis
+    ports:
+      - "6380:6379"
+    command: redis-server --maxmemory 128mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # ── OTel Collector ────────────────────────────────────────────────────────────
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:latest
+    container_name: shopflow-otel-collector
+    command: ["--config=/etc/otel/config.yaml"]
+    volumes:
+      - ./otel-collector/config.yaml:/etc/otel/config.yaml
+    ports:
+      - "4317:4317"
+      - "4318:4318"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # ── api-gateway (port 3000) ───────────────────────────────────────────────────
+  api-gateway:
+    build: ./services/api-gateway
+    container_name: shopflow-api-gateway
+    ports:
+      - "3000:3000"
+    environment:
+      <<: *otel-env
+      OTEL_SERVICE_NAME: api-gateway
+      PORT: 3000
+      ORDER_SERVICE_URL: http://order-service:3001
+      INVENTORY_SERVICE_URL: http://inventory-service:3002
+      PAYMENT_SERVICE_URL: http://payment-service:3003
+      AI_SERVICE_URL: http://ai-service:3004
+      JWT_SECRET: shopflow-dev-secret
+      RATE_LIMIT_RPM: 600
+    depends_on:
+      - order-service
+      - inventory-service
+      - ai-service
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:3000/health || exit 1"]
+      interval: 10s
+      retries: 5
+
+  # ── order-service (port 3001) ─────────────────────────────────────────────────
+  order-service:
+    build: ./services/order-service
+    container_name: shopflow-order-service
+    ports:
+      - "3001:3001"
+    environment:
+      <<: [*otel-env, *db-env]
+      OTEL_SERVICE_NAME: order-service
+      PORT: 3001
+      INVENTORY_SERVICE_URL: http://inventory-service:3002
+      PAYMENT_SERVICE_URL: http://payment-service:3003
+      # Pool max intentionally low to enable pool-exhaustion fault scenario
+      DB_POOL_MAX: 10
+      # HTTP timeout for downstream calls (ms)
+      DOWNSTREAM_TIMEOUT_MS: 5000
+    depends_on:
+      shopflow-postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:3001/health || exit 1"]
+      interval: 10s
+      retries: 5
+
+  # ── inventory-service (port 3002) ─────────────────────────────────────────────
+  inventory-service:
+    build: ./services/inventory-service
+    container_name: shopflow-inventory-service
+    ports:
+      - "3002:3002"
+    environment:
+      <<: [*otel-env, *db-env]
+      OTEL_SERVICE_NAME: inventory-service
+      PORT: 3002
+      REDIS_URL: redis://shopflow-redis:6379
+      # Short TTL makes cache stampede easy to trigger
+      CACHE_TTL_SECONDS: 30
+      DB_POOL_MAX: 10
+    depends_on:
+      shopflow-postgres:
+        condition: service_healthy
+      shopflow-redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:3002/health || exit 1"]
+      interval: 10s
+      retries: 5
+
+  # ── payment-service (port 3003) ───────────────────────────────────────────────
+  payment-service:
+    build: ./services/payment-service
+    container_name: shopflow-payment-service
+    ports:
+      - "3003:3003"
+    environment:
+      <<: *otel-env
+      OTEL_SERVICE_NAME: payment-service
+      PORT: 3003
+      # Configurable via admin endpoint — fault injector uses these
+      PAYMENT_LATENCY_MS: 0
+      PAYMENT_FAILURE_RATE: 0.03
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:3003/health || exit 1"]
+      interval: 10s
+      retries: 5
+
+  # ── ai-service (port 3004) ────────────────────────────────────────────────────
+  ai-service:
+    build: ./services/ai-service
+    container_name: shopflow-ai-service
+    ports:
+      - "3004:3004"
+    environment:
+      <<: *otel-env
+      OTEL_SERVICE_NAME: ai-service
+      PORT: 3004
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
+      OLLAMA_MODEL: llama3.2
+      # Rate limiter — toggled by fault injector
+      AI_RATE_LIMIT_ENABLED: "false"
+      AI_RATE_LIMIT_RPM: 10
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:3004/health || exit 1"]
+      interval: 10s
+      retries: 5
+
+  # ── Traffic Generator (continuous realistic load) ─────────────────────────────
+  traffic-generator:
+    build: ./traffic-generator
+    container_name: shopflow-traffic-gen
+    environment:
+      GATEWAY_URL: http://api-gateway:3000
+      REQUESTS_PER_SECOND: 2
+    depends_on:
+      api-gateway:
+        condition: service_healthy
+    restart: on-failure
+
+volumes:
+  shopflow_pg_data:

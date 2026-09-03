@@ -1,0 +1,52 @@
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  batch:
+    timeout: 1s
+    send_batch_size: 512
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 256
+
+exporters:
+  otlphttp/faultlens_metrics:
+    endpoint: http://host.docker.internal:8000/v1/ingest/metrics
+    tls:
+      insecure: true
+    encoding: json
+
+  otlphttp/faultlens_logs:
+    endpoint: http://host.docker.internal:8000/v1/ingest/logs
+    tls:
+      insecure: true
+    encoding: json
+
+  otlphttp/faultlens_traces:
+    endpoint: http://host.docker.internal:8000/v1/ingest/traces
+    tls:
+      insecure: true
+    encoding: json
+
+  debug:
+    verbosity: basic
+
+service:
+  pipelines:
+    metrics:
+      receivers:  [otlp]
+      processors: [memory_limiter, batch]
+      exporters:  [otlphttp/faultlens_metrics, debug]
+    logs:
+      receivers:  [otlp]
+      processors: [memory_limiter, batch]
+      exporters:  [otlphttp/faultlens_logs, debug]
+    traces:
+      receivers:  [otlp]
+      processors: [memory_limiter, batch]
+      exporters:  [otlphttp/faultlens_traces, debug]

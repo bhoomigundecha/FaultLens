@@ -1,0 +1,68 @@
+{
+  "resourceSpans": [
+    {
+      "resource": {
+        "attributes": [
+          {"key": "service.name", "value": {"stringValue": "demo-store"}}
+        ]
+      },
+      "scopeSpans": [
+        {
+          "spans": [
+            {
+              "traceId":      "aaaa1111bbbb2222cccc3333dddd4444",
+              "spanId":       "1111aaaa2222bbbb",
+              "parentSpanId": "",
+              "name":         "POST /api/orders",
+              "startTimeUnixNano": "1725350400000000000",
+              "endTimeUnixNano":   "1725350408500000000",
+              "status": {"code": 2, "message": "Gateway timeout"},
+              "attributes": [
+                {"key": "http.method", "value": {"stringValue": "POST"}},
+                {"key": "http.status_code", "value": {"stringValue": "504"}}
+              ]
+            },
+            {
+              "traceId":      "aaaa1111bbbb2222cccc3333dddd4444",
+              "spanId":       "2222bbbb3333cccc",
+              "parentSpanId": "1111aaaa2222bbbb",
+              "name":         "POST /api/ai/recommend",
+              "startTimeUnixNano": "1725350400100000000",
+              "endTimeUnixNano":   "1725350408400000000",
+              "status": {"code": 2, "message": "Too Many Requests"},
+              "attributes": [
+                {"key": "http.status_code", "value": {"stringValue": "429"}}
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "resource": {
+        "attributes": [
+          {"key": "service.name", "value": {"stringValue": "ai-recommender"}}
+        ]
+      },
+      "scopeSpans": [
+        {
+          "spans": [
+            {
+              "traceId":      "aaaa1111bbbb2222cccc3333dddd4444",
+              "spanId":       "3333cccc4444dddd",
+              "parentSpanId": "2222bbbb3333cccc",
+              "name":         "ollama.generate",
+              "startTimeUnixNano": "1725350400200000000",
+              "endTimeUnixNano":   "1725350408300000000",
+              "status": {"code": 2, "message": "Rate limit exceeded"},
+              "attributes": [
+                {"key": "ai.model", "value": {"stringValue": "llama3.2"}},
+                {"key": "error",    "value": {"boolValue": true}}
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

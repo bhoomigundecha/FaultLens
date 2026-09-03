@@ -1,0 +1,38 @@
+{
+  "resourceLogs": [
+    {
+      "resource": {
+        "attributes": [
+          {"key": "service.name", "value": {"stringValue": "demo-store"}}
+        ]
+      },
+      "scopeLogs": [
+        {
+          "logRecords": [
+            {
+              "timeUnixNano": "1725350401000000000",
+              "severityText": "ERROR",
+              "body": {"stringValue": "AI rate limit exceeded: 429 Too Many Requests — limit=10 RPM"},
+              "traceId": "abc123def456abc1",
+              "spanId":  "def456abc123def4"
+            },
+            {
+              "timeUnixNano": "1725350402000000000",
+              "severityText": "ERROR",
+              "body": {"stringValue": "AI rate limit exceeded: 429 Too Many Requests — limit=10 RPM"},
+              "traceId": "abc123def456abc2",
+              "spanId":  "def456abc123def5"
+            },
+            {
+              "timeUnixNano": "1725350403000000000",
+              "severityText": "WARN",
+              "body": {"stringValue": "Downstream call to ai-service failed, returning cached response"},
+              "traceId": "abc123def456abc3",
+              "spanId":  "def456abc123def6"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
