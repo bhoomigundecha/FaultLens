@@ -21,7 +21,7 @@ logs-worker:
 
 # ─── DB Schema Init ───────────────────────────────────────────────────────────
 init-db:
-	$(PYTHON) storage/init_schemas.py
+	docker compose exec ingestion python -m storage.init_schemas
 
 # ─── Topics ───────────────────────────────────────────────────────────────────
 topics:

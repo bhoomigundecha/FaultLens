@@ -15,8 +15,10 @@ import logging
 from datetime import datetime, timezone
 from typing import Any
 
-from langchain_ollama import ChatOllama
 from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.language_models.chat_models import BaseChatModel
+
+from agents.llm import get_chat_llm
 
 import storage.postgres_client as pg_store
 import storage.elasticsearch_client as es_store
@@ -29,18 +31,8 @@ from config.settings import get_settings
 logger = logging.getLogger(__name__)
 settings = get_settings()
 
-_llm: ChatOllama | None = None
-
-
-def get_llm() -> ChatOllama:
-    global _llm
-    if _llm is None:
-        _llm = ChatOllama(
-            model=settings.ollama_model,
-            base_url=settings.ollama_base_url,
-            temperature=0.3,  # slight creativity for readable reports
-        )
-    return _llm
+def get_llm() -> BaseChatModel:
+    return get_chat_llm(temperature=0.3)
 
 
 REPORT_SYSTEM_PROMPT = """You are the Reporter Agent in FaultLens, an incident intelligence system.

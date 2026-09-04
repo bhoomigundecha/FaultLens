@@ -152,8 +152,10 @@ async def embed_text(text: str) -> list[float] | None:
     """
     import httpx
 
+    # If using cloud LLM (Groq) and Ollama isn't running locally, skip silently
+    timeout = 2.0 if getattr(settings, "llm_provider", "ollama") == "groq" else 30.0
     try:
-        async with httpx.AsyncClient(timeout=30) as client:
+        async with httpx.AsyncClient(timeout=timeout) as client:
             resp = await client.post(
                 f"{settings.ollama_base_url}/api/embeddings",
                 json={"model": settings.ollama_embed_model, "prompt": text},
@@ -161,7 +163,7 @@ async def embed_text(text: str) -> list[float] | None:
             resp.raise_for_status()
             return resp.json().get("embedding")
     except Exception as e:
-        logger.warning(f"Embedding failed: {e}")
+        logger.debug(f"Optional Ollama embedding skipped: {e}")
         return None
 
 

@@ -15,23 +15,13 @@ processors:
     limit_mib: 256
 
 exporters:
-  otlphttp/faultlens_metrics:
-    endpoint: http://host.docker.internal:8000/v1/ingest/metrics
+  otlphttp/faultlens:
+    endpoint: http://host.docker.internal:8000
     tls:
       insecure: true
     encoding: json
-
-  otlphttp/faultlens_logs:
-    endpoint: http://host.docker.internal:8000/v1/ingest/logs
-    tls:
-      insecure: true
-    encoding: json
-
-  otlphttp/faultlens_traces:
-    endpoint: http://host.docker.internal:8000/v1/ingest/traces
-    tls:
-      insecure: true
-    encoding: json
+    headers:
+      Content-Type: "application/json"
 
   debug:
     verbosity: basic
@@ -41,12 +31,12 @@ service:
     metrics:
       receivers:  [otlp]
       processors: [memory_limiter, batch]
-      exporters:  [otlphttp/faultlens_metrics, debug]
+      exporters:  [otlphttp/faultlens, debug]
     logs:
       receivers:  [otlp]
       processors: [memory_limiter, batch]
-      exporters:  [otlphttp/faultlens_logs, debug]
+      exporters:  [otlphttp/faultlens, debug]
     traces:
       receivers:  [otlp]
       processors: [memory_limiter, batch]
-      exporters:  [otlphttp/faultlens_traces, debug]
+      exporters:  [otlphttp/faultlens, debug]

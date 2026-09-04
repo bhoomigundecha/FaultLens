@@ -19,6 +19,9 @@ const PORT    = process.env.PORT || 3004;
 
 const OLLAMA_URL   = process.env.OLLAMA_BASE_URL || 'http://localhost:11434';
 const OLLAMA_MODEL = process.env.OLLAMA_MODEL    || 'llama3.2';
+const GROQ_API_KEY = process.env.GROQ_API_KEY    || '';
+const GROQ_MODEL   = process.env.GROQ_MODEL      || 'openai/gpt-oss-120b';
+const LLM_PROVIDER = (process.env.LLM_PROVIDER || (GROQ_API_KEY ? 'groq' : 'ollama')).toLowerCase();
 
 // ── Rate limiter state ────────────────────────────────────────────────────────
 let rateLimitEnabled  = process.env.AI_RATE_LIMIT_ENABLED === 'true';
@@ -83,7 +86,7 @@ app.post('/recommend', async (req, res) => {
     }
   }
 
-  // ── Call Ollama ────────────────────────────────────────────────────────────
+  // ── Call LLM (Groq or Ollama) ──────────────────────────────────────────────
   const prompt = `You are a product recommendation engine for an e-commerce platform.
 A customer is viewing: "${product_name || product_id}" (category: ${category || 'unknown'}).
 ${user_history.length ? `They recently viewed: ${user_history.slice(0, 3).join(', ')}.` : ''}
@@ -93,12 +96,57 @@ Respond ONLY with a JSON array in this format:
 [{"product_name": "...", "reason": "...", "confidence": 0.9}]
 Keep each reason under 15 words.`;
 
+  // 1. Try Groq Cloud if enabled/keyed
+  if (LLM_PROVIDER === 'groq' && GROQ_API_KEY) {
+    try {
+      const groqResp = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method:  'POST',
+        headers: {
+          'Content-Type':  'application/json',
+          'Authorization': `Bearer ${GROQ_API_KEY}`,
+        },
+        body: JSON.stringify({
+          model: GROQ_MODEL,
+          messages: [{ role: 'user', content: prompt }],
+          temperature: 0.1,
+        }),
+        signal: AbortSignal.timeout(10_000),
+      });
+
+      if (groqResp.ok) {
+        const data = await groqResp.json();
+        const content = data.choices?.[0]?.message?.content || '';
+        let recommendations = TRENDING;
+        try {
+          const jsonMatch = content.match(/\[[\s\S]*\]/);
+          if (jsonMatch) recommendations = JSON.parse(jsonMatch[0]);
+        } catch {
+          console.warn('[AI] Could not parse Groq response as JSON, using fallback');
+        }
+
+        return res.json({
+          product_id,
+          recommendations,
+          source: 'groq',
+          model: GROQ_MODEL,
+          latency_ms: Date.now() - windowStart,
+        });
+      } else {
+        const errText = await groqResp.text();
+        console.warn(`[AI] Groq error ${groqResp.status}: ${errText}`);
+      }
+    } catch (groqErr) {
+      console.warn(`[AI] Groq call failed (${groqErr.message}), falling back...`);
+    }
+  }
+
+  // 2. Fallback to Ollama or trending products
   try {
     const ollamaResp = await fetch(`${OLLAMA_URL}/api/generate`, {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
       body:    JSON.stringify({ model: OLLAMA_MODEL, prompt, stream: false }),
-      signal:  AbortSignal.timeout(25_000),
+      signal:  AbortSignal.timeout(15_000),
     });
 
     if (!ollamaResp.ok) {
@@ -127,7 +175,7 @@ Keep each reason under 15 words.`;
 
   } catch (err) {
     const isTimeout = err.name === 'TimeoutError';
-    console.error(`[AI] Ollama ${isTimeout ? 'TIMEOUT' : 'ERROR'}: ${err.message}`);
+    console.error(`[AI] LLM ${isTimeout ? 'TIMEOUT' : 'ERROR'}: ${err.message}`);
     // Graceful degradation — return trending products instead of failing
     res.status(200).json({
       recommendations: TRENDING,
@@ -139,7 +187,9 @@ Keep each reason under 15 words.`;
 
 app.get('/health', (req, res) => res.json({
   status: 'ok', service: 'ai-service',
+  provider: LLM_PROVIDER,
   rate_limit: { enabled: rateLimitEnabled, rpm: rateLimitRpm, current: requestsThisMinute },
+  groq: { model: GROQ_MODEL, enabled: !!GROQ_API_KEY },
   ollama: { url: OLLAMA_URL, model: OLLAMA_MODEL },
 }));
 

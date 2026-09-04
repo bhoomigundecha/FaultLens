@@ -14,11 +14,12 @@ Endpoints:
 
 from __future__ import annotations
 
+import json
 import logging
 from contextlib import asynccontextmanager
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import ORJSONResponse
 
@@ -80,6 +81,73 @@ app.add_middleware(
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
+async def _parse_otlp_body(request: Request) -> dict[str, Any]:
+    """
+    Parse an OTLP/HTTP request body regardless of content-type or encoding.
+
+    Handles:
+      - gzip-compressed bodies (collector default)
+      - application/json → parse as JSON directly
+      - application/x-protobuf → decode using opentelemetry-proto stubs
+      - unknown content-type → try JSON first, then protobuf
+    """
+    import gzip
+
+    body = await request.body()
+    content_encoding = request.headers.get("content-encoding", "")
+    content_type = request.headers.get("content-type", "")
+
+    # Decompress gzip if needed
+    if content_encoding == "gzip" or (len(body) > 1 and body[0] == 0x1f and body[1] == 0x8b):
+        body = gzip.decompress(body)
+
+    if "json" in content_type:
+        return json.loads(body)
+
+    if "protobuf" in content_type:
+        return _decode_protobuf(request.url.path, body)
+
+    # Unknown / missing content-type: try JSON first, then protobuf
+    try:
+        return json.loads(body)
+    except Exception:
+        return _decode_protobuf(request.url.path, body)
+
+
+def _decode_protobuf(path: str, body: bytes) -> dict[str, Any]:
+    """
+    Attempt to decode an OTLP protobuf body to a plain dict.
+    Uses MessageToDict with camelCase keys to match the OTLP JSON spec
+    that our otlp_receiver parsers expect.
+    """
+    try:
+        from google.protobuf.json_format import MessageToDict
+        if "metrics" in path:
+            from opentelemetry.proto.collector.metrics.v1.metrics_service_pb2 import ExportMetricsServiceRequest
+            msg = ExportMetricsServiceRequest()
+            msg.ParseFromString(body)
+        elif "logs" in path:
+            from opentelemetry.proto.collector.logs.v1.logs_service_pb2 import ExportLogsServiceRequest
+            msg = ExportLogsServiceRequest()
+            msg.ParseFromString(body)
+        elif "traces" in path:
+            from opentelemetry.proto.collector.trace.v1.trace_service_pb2 import ExportTraceServiceRequest
+            msg = ExportTraceServiceRequest()
+            msg.ParseFromString(body)
+        else:
+            return {}
+        # Use camelCase (preserving_proto_field_name=False) to match OTLP JSON spec
+        return MessageToDict(msg, preserving_proto_field_name=False, including_default_value_fields=False)
+    except ImportError:
+        logger.error(
+            "Received protobuf-encoded OTLP data but opentelemetry-proto is not installed. "
+            "Configure your OTel Collector with 'encoding: json' to fix this."
+        )
+    except Exception as e:
+        logger.warning(f"Protobuf decode failed for {path}: {e}")
+    return {}
+
+
 def _publish_metrics(metrics) -> int:
     for m in metrics:
         publish(RAW_METRICS.name, m.to_kafka_payload(), key=m.service_id)
@@ -101,12 +169,14 @@ def _publish_traces(traces) -> int:
 # ─── OTLP Endpoints ───────────────────────────────────────────────────────────
 
 @app.post("/v1/ingest/metrics", status_code=202)
-async def ingest_metrics(payload: dict[str, Any]):
-    """Accepts OTLP/HTTP JSON MetricsService export."""
+@app.post("/v1/metrics", status_code=202)
+@app.post("/v1/ingest/metrics/v1/metrics", status_code=202)
+async def ingest_metrics(request: Request):
+    """Accepts OTLP/HTTP JSON or protobuf MetricsService export."""
     try:
+        payload = await _parse_otlp_body(request)
         metrics = parse_otlp_metrics(payload)
         count = _publish_metrics(metrics)
-        # Async background: re-classify environment type for seen services
         service_ids = {m.service_id for m in metrics}
         for sid in service_ids:
             await detect_and_persist(sid)
@@ -117,9 +187,12 @@ async def ingest_metrics(payload: dict[str, Any]):
 
 
 @app.post("/v1/ingest/logs", status_code=202)
-async def ingest_logs(payload: dict[str, Any]):
-    """Accepts OTLP/HTTP JSON LogsService export."""
+@app.post("/v1/logs", status_code=202)
+@app.post("/v1/ingest/logs/v1/logs", status_code=202)
+async def ingest_logs(request: Request):
+    """Accepts OTLP/HTTP JSON or protobuf LogsService export."""
     try:
+        payload = await _parse_otlp_body(request)
         logs = parse_otlp_logs(payload)
         count = _publish_logs(logs)
         service_ids = {log.service_id for log in logs}
@@ -132,9 +205,12 @@ async def ingest_logs(payload: dict[str, Any]):
 
 
 @app.post("/v1/ingest/traces", status_code=202)
-async def ingest_traces(payload: dict[str, Any]):
-    """Accepts OTLP/HTTP JSON TraceService export."""
+@app.post("/v1/traces", status_code=202)
+@app.post("/v1/ingest/traces/v1/traces", status_code=202)
+async def ingest_traces(request: Request):
+    """Accepts OTLP/HTTP JSON or protobuf TraceService export."""
     try:
+        payload = await _parse_otlp_body(request)
         traces = parse_otlp_traces(payload)
         count = _publish_traces(traces)
         service_ids = {t.service_id for t in traces}

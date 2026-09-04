@@ -35,6 +35,11 @@ class Settings(BaseSettings):
         "postgresql://faultlens:faultlens@localhost:5433/faultlens"
     )
 
+    # ─── LLM Provider (Groq / Ollama) ─────────────────────────────────────────
+    llm_provider: str = "groq"
+    groq_api_key: str = ""
+    groq_model: str = "openai/gpt-oss-120b"
+
     # ─── Ollama ───────────────────────────────────────────────────────────────
     ollama_base_url: str = "http://localhost:11434"
     ollama_model: str = "llama3.2"

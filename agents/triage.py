@@ -15,8 +15,10 @@ import logging
 import re
 from typing import Any
 
-from langchain_ollama import ChatOllama
 from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.language_models.chat_models import BaseChatModel
+
+from agents.llm import get_chat_llm
 
 from agents.state import FaultLensState
 from config.settings import get_settings
@@ -158,18 +160,8 @@ def _rule_based_classify(
     return best_match if best_count > 0 else None
 
 
-_llm: ChatOllama | None = None
-
-
-def get_llm() -> ChatOllama:
-    global _llm
-    if _llm is None:
-        _llm = ChatOllama(
-            model=settings.ollama_model,
-            base_url=settings.ollama_base_url,
-            temperature=0.0,
-        )
-    return _llm
+def get_llm() -> BaseChatModel:
+    return get_chat_llm(temperature=0.0)
 
 
 TRIAGE_SYSTEM_PROMPT = f"""You are the Triage Agent in FaultLens.

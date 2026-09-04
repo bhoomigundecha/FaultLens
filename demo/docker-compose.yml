@@ -169,6 +169,9 @@ services:
       PORT: 3004
       OLLAMA_BASE_URL: http://host.docker.internal:11434
       OLLAMA_MODEL: llama3.2
+      LLM_PROVIDER: ${LLM_PROVIDER:-groq}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      GROQ_MODEL: ${GROQ_MODEL:-openai/gpt-oss-120b}
       # Rate limiter — toggled by fault injector
       AI_RATE_LIMIT_ENABLED: "false"
       AI_RATE_LIMIT_RPM: 10

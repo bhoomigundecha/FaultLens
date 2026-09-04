@@ -28,7 +28,7 @@ seen_incident_ids = set()
 def main(url, poll_interval):
     """Continuously monitor FaultLens for live production incidents and remediation advice."""
     click.echo("\n" + "═" * 78)
-    click.echo("  🛡️  FaultLens Live Incident Intelligence Monitor")
+    click.echo("  FaultLens Live Incident Intelligence Monitor")
     click.echo(f"  Watching: {url}/v1/incidents (polling every {poll_interval}s)")
     click.echo("  Status  : WAITING FOR PRODUCTION TELEMETRY ANOMALIES...")
     click.echo("═" * 78 + "\n")
@@ -46,7 +46,7 @@ def main(url, poll_interval):
                                 seen_incident_ids.add(inc_id)
                                 _display_incident(inc)
                 except httpx.ConnectError:
-                    pass
+                    click.echo("  ⏳ Waiting for FaultLens API (http://localhost:8000) to come online... Run 'make up' if not started.")
                 except Exception as e:
                     click.echo(f"  [Monitor Warning] {e}")
 

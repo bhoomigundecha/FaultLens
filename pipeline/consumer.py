@@ -1,26 +1,29 @@
 """
-Base Kafka consumer — subclass this to build signal-type-specific consumers.
+Kafka consumers — each runs in its own background daemon thread with a
+dedicated asyncio event loop and its own DB connections.
 
-Each consumer runs in its own thread (via `start()`) and calls `handle(msg)`
-for each message. Override `handle()` in subclasses.
+This avoids the asyncpg/elasticsearch pool-vs-event-loop conflict that occurs
+when sharing module-level async pools across threads.
 
 Built-in consumers:
-  - MetricsConsumer  → normalises + stores in TimescaleDB
-  - LogsConsumer     → normalises + stores in Elasticsearch
-  - TracesConsumer   → normalises + updates Neo4j
+  - MetricsConsumer  → TimescaleDB (asyncpg direct connection)
+  - LogsConsumer     → Elasticsearch (per-thread AsyncElasticsearch client)
+  - TracesConsumer   → Neo4j (sync driver, safe from any thread)
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import threading
 from abc import ABC, abstractmethod
 from typing import Any
 
-from confluent_kafka import Consumer, KafkaError, KafkaException
+from confluent_kafka import Consumer, KafkaError
 
 from config.settings import get_settings
+from pipeline.topics import RAW_METRICS, RAW_LOGS, RAW_TRACES
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -28,53 +31,75 @@ settings = get_settings()
 
 class BaseConsumer(ABC):
     """
-    Abstract Kafka consumer. Runs in a background daemon thread.
-    Subclasses implement `handle(payload: dict)`.
+    Abstract Kafka consumer. Each instance runs in its own daemon thread
+    with a dedicated asyncio event loop so there are zero shared async
+    resources between threads.
     """
 
-    def __init__(self, topics: list[str], group_id: str | None = None) -> None:
+    def __init__(self, topics: list[str], group_id: str) -> None:
         self.topics = topics
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
-        self._consumer = Consumer(
-            {
-                "bootstrap.servers": settings.kafka_bootstrap_servers,
-                "group.id": group_id or settings.kafka_consumer_group,
-                "auto.offset.reset": "latest",
-                "enable.auto.commit": True,
-                "auto.commit.interval.ms": 1000,
-                "session.timeout.ms": 30000,
-            }
-        )
+        self._consumer = Consumer({
+            "bootstrap.servers": settings.kafka_bootstrap_servers,
+            "group.id": group_id,
+            "auto.offset.reset": "latest",
+            "enable.auto.commit": True,
+            "auto.commit.interval.ms": 1000,
+            "session.timeout.ms": 30000,
+        })
 
     @abstractmethod
-    def handle(self, payload: dict[str, Any]) -> None:
-        """Process a single decoded message payload."""
+    async def setup(self) -> None:
+        """Called once at thread startup to initialise connections."""
+
+    @abstractmethod
+    async def handle(self, payload: dict[str, Any]) -> None:
+        """Process one decoded Kafka message."""
+
+    @abstractmethod
+    async def teardown(self) -> None:
+        """Called at thread shutdown to close connections."""
 
     def _run(self) -> None:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+        try:
+            loop.run_until_complete(self.setup())
+        except Exception:
+            logger.exception(f"{self.__class__.__name__} setup failed")
+            return
+
         self._consumer.subscribe(self.topics)
         logger.info(f"{self.__class__.__name__} subscribed to {self.topics}")
+
         try:
             while not self._stop_event.is_set():
                 msg = self._consumer.poll(timeout=1.0)
                 if msg is None:
                     continue
                 if msg.error():
-                    if msg.error().code() == KafkaError._PARTITION_EOF:
-                        continue
-                    logger.error(f"Consumer error: {msg.error()}")
+                    if msg.error().code() != KafkaError._PARTITION_EOF:
+                        logger.error(f"{self.__class__.__name__} Kafka error: {msg.error()}")
                     continue
                 try:
                     payload = json.loads(msg.value().decode("utf-8"))
-                    self.handle(payload)
-                except Exception as exc:
-                    logger.exception(f"Error handling message from {msg.topic()}: {exc}")
+                    loop.run_until_complete(self.handle(payload))
+                except Exception:
+                    logger.exception(f"{self.__class__.__name__} failed to handle message")
         finally:
             self._consumer.close()
+            try:
+                loop.run_until_complete(self.teardown())
+            except Exception:
+                pass
+            loop.close()
 
     def start(self) -> None:
-        """Start the consumer in a background daemon thread."""
-        self._thread = threading.Thread(target=self._run, daemon=True, name=self.__class__.__name__)
+        self._thread = threading.Thread(
+            target=self._run, daemon=True, name=self.__class__.__name__
+        )
         self._thread.start()
         logger.info(f"{self.__class__.__name__} started")
 
@@ -84,60 +109,99 @@ class BaseConsumer(ABC):
             self._thread.join(timeout=5)
 
 
-# ─── Concrete Consumers ───────────────────────────────────────────────────────
-
-import asyncio
-import storage.timescale as ts_store
-import storage.elasticsearch_client as es_store
-import storage.neo4j_client as neo4j_store
-from pipeline.topics import RAW_METRICS, RAW_LOGS, RAW_TRACES
-
+# ─── MetricsConsumer ─────────────────────────────────────────────────────────
 
 class MetricsConsumer(BaseConsumer):
-    """Consumes raw.metrics → stores in TimescaleDB."""
+    """Consumes raw.metrics → inserts into TimescaleDB."""
 
     def __init__(self) -> None:
         super().__init__([RAW_METRICS.name], group_id="faultlens-metrics-store")
+        self._conn = None
 
-    def handle(self, payload: dict[str, Any]) -> None:
-        # payload is a normalised metric dict (see ingestion/models.py)
-        asyncio.run(ts_store.insert_metric(
-            service_id=payload["service_id"],
-            metric_name=payload["metric_name"],
-            value=payload["value"],
-            unit=payload.get("unit", ""),
-            labels=payload.get("labels", {}),
-        ))
+    async def setup(self) -> None:
+        import asyncpg
+        dsn = (
+            settings.timescale_sync_url
+            .replace("postgresql+asyncpg://", "postgresql://")
+            .replace("postgresql+psycopg2://", "postgresql://")
+        )
+        self._conn = await asyncpg.connect(dsn)
+        logger.info("MetricsConsumer: TimescaleDB connection ready")
 
+    async def handle(self, payload: dict[str, Any]) -> None:
+        from datetime import datetime, timezone
+        ts_str = payload.get("timestamp")
+        ts = (
+            datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+            if ts_str else datetime.now(timezone.utc)
+        )
+        await self._conn.execute(
+            """
+            INSERT INTO metrics (time, service_id, metric_name, value, unit, labels)
+            VALUES ($1, $2, $3, $4, $5, $6::jsonb)
+            """,
+            ts,
+            payload["service_id"],
+            payload["metric_name"],
+            float(payload["value"]),
+            payload.get("unit", ""),
+            json.dumps(payload.get("labels", {})),
+        )
+
+    async def teardown(self) -> None:
+        if self._conn:
+            await self._conn.close()
+
+
+# ─── LogsConsumer ─────────────────────────────────────────────────────────────
 
 class LogsConsumer(BaseConsumer):
-    """Consumes raw.logs → stores in Elasticsearch."""
+    """Consumes raw.logs → indexes into Elasticsearch."""
 
     def __init__(self) -> None:
         super().__init__([RAW_LOGS.name], group_id="faultlens-logs-store")
+        self._es = None
 
-    def handle(self, payload: dict[str, Any]) -> None:
-        asyncio.run(es_store.insert_log(payload))
+    async def setup(self) -> None:
+        from elasticsearch import AsyncElasticsearch
+        self._es = AsyncElasticsearch(
+            hosts=[settings.elasticsearch_url],
+            request_timeout=30,
+            retry_on_timeout=True,
+            max_retries=3,
+        )
+        logger.info("LogsConsumer: Elasticsearch client ready")
 
+    async def handle(self, payload: dict[str, Any]) -> None:
+        await self._es.index(index=settings.es_logs_index, document=payload)
+
+    async def teardown(self) -> None:
+        if self._es:
+            await self._es.close()
+
+
+# ─── TracesConsumer ───────────────────────────────────────────────────────────
 
 class TracesConsumer(BaseConsumer):
-    """Consumes raw.traces → updates Neo4j service dependency graph."""
+    """Consumes raw.traces → upserts edges in Neo4j service dependency graph."""
 
     def __init__(self) -> None:
         super().__init__([RAW_TRACES.name], group_id="faultlens-traces-store")
 
-    def handle(self, payload: dict[str, Any]) -> None:
-        """
-        Each trace payload contains a list of spans.
-        We extract caller→callee relationships and upsert them in Neo4j.
-        """
+    async def setup(self) -> None:
+        # Neo4j driver is sync — nothing async to set up
+        logger.info("TracesConsumer: Neo4j driver ready (sync)")
+
+    async def handle(self, payload: dict[str, Any]) -> None:
+        import storage.neo4j_client as neo4j_store
         spans = payload.get("spans", [])
         span_map = {s["span_id"]: s for s in spans}
 
         for span in spans:
-            if not span.get("parent_span_id"):
+            parent_id = span.get("parent_span_id")
+            if not parent_id:
                 continue
-            parent = span_map.get(span["parent_span_id"])
+            parent = span_map.get(parent_id)
             if parent is None:
                 continue
             caller_id = parent["service_id"]
@@ -145,14 +209,14 @@ class TracesConsumer(BaseConsumer):
             if caller_id == callee_id:
                 continue
 
-            duration_ms = span.get("duration_ms", 0)
-            is_error = span.get("status_code") == "ERROR"
-
             neo4j_store.upsert_service(caller_id, caller_id)
             neo4j_store.upsert_service(callee_id, callee_id)
             neo4j_store.upsert_edge(
                 caller_id=caller_id,
                 callee_id=callee_id,
-                latency_p99_ms=float(duration_ms),
-                error_rate=1.0 if is_error else 0.0,
+                latency_p99_ms=float(span.get("duration_ms", 0)),
+                error_rate=1.0 if span.get("status_code") == "ERROR" else 0.0,
             )
+
+    async def teardown(self) -> None:
+        pass

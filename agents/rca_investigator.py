@@ -32,7 +32,7 @@ import logging
 import re
 from typing import Any
 
-from langchain_ollama import ChatOllama
+from agents.llm import get_chat_llm
 from langchain_core.tools import tool
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage, ToolMessage
 from langchain_core.utils.function_calling import convert_to_openai_tool
@@ -437,11 +437,7 @@ async def rca_investigator_node(state: FaultLensState) -> dict[str, Any]:
     tool_fns, tool_schemas = _make_tools(service_id)
 
     # Build LLM (with tool-calling)
-    llm = ChatOllama(
-        model=settings.ollama_model,
-        base_url=settings.ollama_base_url,
-        temperature=0.1,
-    )
+    llm = get_chat_llm(temperature=0.1)
 
     # Build initial context from pre-gathered evidence
     initial_context = _build_initial_context(state)
@@ -510,7 +506,11 @@ async def rca_investigator_node(state: FaultLensState) -> dict[str, Any]:
                     logger.info(f"[RCAInvestigator]   ↩  Tool result ({tool_name}): {result[:150]}")
 
                     # Append tool result so LLM sees it next iteration
-                    messages.append(HumanMessage(content=f"Tool '{tool_name}' result:\n{result}"))
+                    tool_call_id = tc.get("id") or tc.get("tool_call_id")
+                    if tool_call_id:
+                        messages.append(ToolMessage(tool_call_id=str(tool_call_id), content=f"Tool '{tool_name}' result:\n{result}"))
+                    else:
+                        messages.append(HumanMessage(content=f"Tool '{tool_name}' result:\n{result}"))
             else:
                 # No tool calls and no FINAL_ANSWER — nudge the agent
                 if iteration < MAX_ITERATIONS:

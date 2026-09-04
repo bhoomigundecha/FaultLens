@@ -101,8 +101,11 @@ async def run_worker() -> None:
         logger.warning(f"Topic creation warning: {e}")
 
     # ── Build graph with Postgres checkpointer ────────────────────────────────
+    # autocommit=True is required: LangGraph's checkpointer.setup() runs
+    # `CREATE INDEX CONCURRENTLY` which PostgreSQL forbids inside a transaction.
     conn_string = settings.postgres_sync_url
-    async with await psycopg.AsyncConnection.connect(conn_string) as conn:
+    conn = await psycopg.AsyncConnection.connect(conn_string, autocommit=True)
+    try:
         checkpointer = AsyncPostgresSaver(conn)
         await checkpointer.setup()  # creates langgraph checkpoint tables
         graph = build_graph(checkpointer=checkpointer)
@@ -119,6 +122,8 @@ async def run_worker() -> None:
                 logger.exception(f"Poll cycle error: {e}")
 
             await asyncio.sleep(settings.agent_poll_interval_seconds)
+    finally:
+        await conn.close()
 
 
 async def _poll_cycle(graph) -> None:
