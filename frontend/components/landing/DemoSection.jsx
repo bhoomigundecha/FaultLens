@@ -4,7 +4,7 @@ import ClearAnswersPanel from '@/components/landing/ClearAnswersPanel';
 
 export default function DemoSection() {
   return (
-    <section id="demo" className="h-full w-full overflow-hidden"
+    <section id="demo" className="w-full"
              style={{ position: 'relative' }}>
       {/* Soft center glow */}
       <div style={{
@@ -12,7 +12,7 @@ export default function DemoSection() {
         background: 'radial-gradient(ellipse 70% 80% at 50% 50%, rgba(59,130,246,0.06) 0%, transparent 70%)',
       }}/>
 
-      <div className="h-full relative"
+      <div className="relative"
            style={{
              zIndex: 1,
              maxWidth: 1280,
@@ -20,17 +20,18 @@ export default function DemoSection() {
              padding: '0 8px',
              display: 'grid',
              gridTemplateColumns: '1fr 200px 1fr',
+             alignItems: 'stretch',
            }}>
         {/* LEFT */}
-        <div className="h-full overflow-hidden" style={{ paddingLeft: 52, paddingRight: 12, paddingTop: 4 }}>
+        <div style={{ paddingLeft: 52, paddingRight: 12, paddingTop: 4 }}>
           <RawTelemetryPanel />
         </div>
         {/* CENTER */}
-        <div className="h-full overflow-hidden">
+        <div style={{ minHeight: 480, display: 'flex' }}>
           <FlowVisualizer />
         </div>
         {/* RIGHT */}
-        <div className="h-full overflow-hidden" style={{ paddingLeft: 12, paddingRight: 8, paddingTop: 4 }}>
+        <div style={{ paddingLeft: 12, paddingRight: 8, paddingTop: 4 }}>
           <ClearAnswersPanel />
         </div>
       </div>

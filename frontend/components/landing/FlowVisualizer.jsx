@@ -1,80 +1,214 @@
 'use client';
+
 export default function FlowVisualizer() {
   return (
-    <div style={{ position: 'relative', width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+    <div style={{
+      position: 'relative',
+      width: '100%',
+      height: '100%',
+      minHeight: 420,
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      overflow: 'visible',
+    }}>
 
-      {/* Central glowing bar */}
-      <div className="anim-glow" style={{
+      {/* ── 1. LUMINOUS BACKGROUND BACKLIGHT AURA ── */}
+      {/* Outer ambient cyan-blue haze */}
+      <div style={{
         position: 'absolute',
-        left: '50%', transform: 'translateX(-50%)',
-        top: '8%', bottom: '8%',
-        width: 3, borderRadius: 9999,
-        background: 'linear-gradient(to bottom, #06b6d4, #3b82f6, #06b6d4)',
-        boxShadow: '0 0 14px 3px rgba(6,182,212,0.55), 0 0 36px 8px rgba(59,130,246,0.28)',
+        left: '50%',
+        top: '50%',
+        transform: 'translate(-50%, -50%)',
+        width: 380,
+        height: 420,
+        borderRadius: '50%',
+        background: 'radial-gradient(ellipse 65% 75% at 50% 50%, rgba(6, 182, 212, 0.16) 0%, rgba(59, 130, 246, 0.10) 35%, rgba(147, 197, 253, 0.04) 65%, transparent 80%)',
+        filter: 'blur(30px)',
+        pointerEvents: 'none',
+        zIndex: 0,
+      }}/>
+
+      {/* Core intense bright backlight glow behind the bar */}
+      <div style={{
+        position: 'absolute',
+        left: '50%',
+        top: '50%',
+        transform: 'translate(-50%, -50%)',
+        width: 140,
+        height: 280,
+        borderRadius: '50%',
+        background: 'radial-gradient(ellipse 50% 70% at 50% 50%, rgba(6, 182, 212, 0.32) 0%, rgba(37, 99, 235, 0.22) 50%, transparent 80%)',
+        filter: 'blur(16px)',
+        pointerEvents: 'none',
+        zIndex: 0,
+      }}/>
+
+      {/* ── 2. CENTER GLOWING BLUE VERTICAL BAR ── */}
+      <div style={{
+        position: 'absolute',
+        left: '50%',
+        transform: 'translateX(-50%)',
+        top: '16%',
+        bottom: '16%',
+        width: 6.5,
+        borderRadius: 9999,
+        background: '#0062ff',
+        boxShadow: '0 0 12px 2px rgba(0, 98, 255, 0.8), 0 0 28px 6px rgba(6, 182, 212, 0.5), 0 0 50px 10px rgba(59, 130, 246, 0.25)',
         zIndex: 20,
       }}/>
 
-      {/* Animated lines */}
-      <svg style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}
-           viewBox="0 0 200 500" preserveAspectRatio="none" aria-hidden="true">
+      {/* ── 3. STATIC FIBER OPTIC STREAMS & PARTICLES ── */}
+      <svg style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', zIndex: 10 }}
+           viewBox="0 0 220 440" preserveAspectRatio="none" aria-hidden="true">
         <defs>
-          <linearGradient id="g1" x1="0%" y1="0%" x2="100%" y2="0%">
-            <stop offset="0%"   stopColor="#06b6d4" stopOpacity="0.85"/>
-            <stop offset="50%"  stopColor="#3b82f6" stopOpacity="1"/>
-            <stop offset="100%" stopColor="#06b6d4" stopOpacity="0.85"/>
+          {/* Gradients for Left-to-Center */}
+          <linearGradient id="glowLeftCyan" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stopColor="#38bdf8" stopOpacity="0.3"/>
+            <stop offset="60%" stopColor="#06b6d4" stopOpacity="0.85"/>
+            <stop offset="100%" stopColor="#0062ff" stopOpacity="1"/>
           </linearGradient>
-          <linearGradient id="g2" x1="0%" y1="0%" x2="100%" y2="0%">
-            <stop offset="0%"   stopColor="#818cf8" stopOpacity="0.7"/>
-            <stop offset="50%"  stopColor="#3b82f6" stopOpacity="1"/>
-            <stop offset="100%" stopColor="#818cf8" stopOpacity="0.7"/>
+
+          <linearGradient id="glowLeftBlue" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stopColor="#93c5fd" stopOpacity="0.25"/>
+            <stop offset="50%" stopColor="#3b82f6" stopOpacity="0.8"/>
+            <stop offset="100%" stopColor="#0062ff" stopOpacity="1"/>
           </linearGradient>
-          <linearGradient id="g3" x1="0%" y1="0%" x2="100%" y2="0%">
-            <stop offset="0%"   stopColor="#06b6d4" stopOpacity="0.5"/>
-            <stop offset="50%"  stopColor="#60a5fa" stopOpacity="0.9"/>
-            <stop offset="100%" stopColor="#06b6d4" stopOpacity="0.5"/>
+
+          <linearGradient id="glowLeftBright" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stopColor="#e0f2fe" stopOpacity="0.45"/>
+            <stop offset="65%" stopColor="#06b6d4" stopOpacity="0.95"/>
+            <stop offset="100%" stopColor="#2563eb" stopOpacity="1"/>
           </linearGradient>
-          <filter id="glow">
-            <feGaussianBlur in="SourceGraphic" stdDeviation="2.5" result="b"/>
-            <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+
+          {/* Gradients for Center-to-Right */}
+          <linearGradient id="glowRightCyan" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stopColor="#0062ff" stopOpacity="1"/>
+            <stop offset="40%" stopColor="#06b6d4" stopOpacity="0.85"/>
+            <stop offset="100%" stopColor="#38bdf8" stopOpacity="0.3"/>
+          </linearGradient>
+
+          <linearGradient id="glowRightBlue" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stopColor="#0062ff" stopOpacity="1"/>
+            <stop offset="50%" stopColor="#3b82f6" stopOpacity="0.8"/>
+            <stop offset="100%" stopColor="#93c5fd" stopOpacity="0.25"/>
+          </linearGradient>
+
+          <linearGradient id="glowRightBright" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stopColor="#2563eb" stopOpacity="1"/>
+            <stop offset="35%" stopColor="#06b6d4" stopOpacity="0.95"/>
+            <stop offset="100%" stopColor="#e0f2fe" stopOpacity="0.45"/>
+          </linearGradient>
+
+          {/* Soft blur filter for fiber depth */}
+          <filter id="fiberGlow" x="-20%" y="-20%" width="140%" height="140%">
+            <feGaussianBlur in="SourceGraphic" stdDeviation="1.6" result="blur"/>
+            <feMerge>
+              <feMergeNode in="blur"/>
+              <feMergeNode in="SourceGraphic"/>
+            </feMerge>
+          </filter>
+
+          {/* Core high-intensity blur */}
+          <filter id="intenseGlow" x="-25%" y="-25%" width="150%" height="150%">
+            <feGaussianBlur in="SourceGraphic" stdDeviation="2.5" result="b1"/>
+            <feGaussianBlur in="SourceGraphic" stdDeviation="1.0" result="b2"/>
+            <feMerge>
+              <feMergeNode in="b1"/>
+              <feMergeNode in="b2"/>
+              <feMergeNode in="SourceGraphic"/>
+            </feMerge>
           </filter>
         </defs>
 
+        {/* ── BACKGROUND SUBTLE CONTOUR CURVES (Deep ambient layer) ── */}
         {[
-          { d:"M0,45  Q100,90  100,250 Q100,410 200,455", g:"g1", w:1.9, off:900, t:"2.8s", delay:"0s"    },
-          { d:"M0,90  Q100,135 100,250 Q100,370 200,400", g:"g2", w:1.5, off:800, t:"2.8s", delay:"0.3s"  },
-          { d:"M0,140 Q100,175 100,250 Q100,330 200,360", g:"g3", w:1.2, off:700, t:"2.8s", delay:"0.6s"  },
-          { d:"M0,205 Q100,228 100,250 Q100,278 200,300", g:"g2", w:2.0, off:600, t:"2.4s", delay:"0.15s" },
-          { d:"M0,250 L200,250",                          g:"g1", w:2.3, off:500, t:"2.4s", delay:"0s"    },
-          { d:"M0,295 Q100,272 100,250 Q100,222 200,200", g:"g3", w:1.7, off:600, t:"2.4s", delay:"0.45s" },
-          { d:"M0,355 Q100,312 100,250 Q100,185 200,150", g:"g1", w:1.2, off:700, t:"2.8s", delay:"0.8s"  },
-          { d:"M0,405 Q100,355 100,250 Q100,148 200,100", g:"g2", w:1.5, off:800, t:"2.8s", delay:"1.1s"  },
-          { d:"M0,450 Q100,390 100,250 Q100,115 200,55",  g:"g3", w:1.9, off:900, t:"2.8s", delay:"1.4s"  },
-        ].map(({ d, g, w, off, t, delay }, i) => (
-          <path key={i} d={d} stroke={`url(#${g})`} strokeWidth={w} fill="none" filter="url(#glow)"
-                style={{ strokeDasharray: off, strokeDashoffset: off,
-                         animation: `flowLine ${t} ease-in-out ${delay} infinite` }}/>
+          "M 0,20   C 60,20   80,120  110,150 C 140,180 170,20   220,20",
+          "M 0,90   C 60,90   85,165  110,185 C 135,205 170,90   220,90",
+          "M 0,350  C 60,350  85,275  110,255 C 135,235 170,350  220,350",
+          "M 0,420  C 60,420  80,320  110,290 C 140,260 170,420  220,420",
+        ].map((d, i) => (
+          <path key={`ambient-bg-${i}`} d={d}
+                stroke="#93c5fd" strokeWidth="0.8" strokeOpacity="0.25" fill="none"
+                strokeDasharray="4 6"/>
+        ))}
+
+        {/* ── LEFT CONVERGING FIBER STREAM (STATIC) ── */}
+        {[
+          // Upper fan
+          { d: "M 0,35   C 55,35   80,140  110,165", g: "glowLeftCyan",   w: 1.2, op: 0.60 },
+          { d: "M 0,60   C 55,60   80,150  110,175", g: "glowLeftBlue",   w: 1.4, op: 0.72 },
+          { d: "M 0,95   C 60,95   85,165  110,185", g: "glowLeftBright", w: 1.8, op: 0.95 },
+          { d: "M 0,130  C 65,130  88,180  110,195", g: "glowLeftCyan",   w: 1.5, op: 0.88 },
+          { d: "M 0,165  C 70,165  90,195  110,205", g: "glowLeftBright", w: 2.1, op: 1.00 },
+
+          // Middle core
+          { d: "M 0,200  C 70,200  92,210  110,212", g: "glowLeftCyan",   w: 2.3, op: 1.00 },
+          { d: "M 0,225  C 70,225  92,218  110,218", g: "glowLeftBright", w: 2.2, op: 1.00 },
+          { d: "M 0,250  C 70,250  90,228  110,225", g: "glowLeftCyan",   w: 2.0, op: 0.92 },
+
+          // Lower fan
+          { d: "M 0,285  C 65,285  88,240  110,235", g: "glowLeftBlue",   w: 1.6, op: 0.85 },
+          { d: "M 0,320  C 60,320  85,255  110,245", g: "glowLeftBright", w: 1.8, op: 0.95 },
+          { d: "M 0,355  C 55,355  80,270  110,255", g: "glowLeftCyan",   w: 1.4, op: 0.72 },
+          { d: "M 0,385  C 55,385  80,285  110,265", g: "glowLeftBlue",   w: 1.2, op: 0.60 },
+        ].map(({ d, g, w, op }, i) => (
+          <path key={`left-fiber-${i}`} d={d}
+                stroke={`url(#${g})`} strokeWidth={w} strokeOpacity={op} fill="none"
+                filter="url(#fiberGlow)"/>
+        ))}
+
+        {/* ── RIGHT FANNING FIBER STREAM (STATIC) ── */}
+        {[
+          // Upper fan
+          { d: "M 110,165 C 140,140 165,35   220,35",  g: "glowRightCyan",   w: 1.2, op: 0.60 },
+          { d: "M 110,175 C 140,150 165,60   220,60",  g: "glowRightBlue",   w: 1.4, op: 0.72 },
+          { d: "M 110,185 C 135,165 160,95   220,95",  g: "glowRightBright", w: 1.8, op: 0.95 },
+          { d: "M 110,195 C 132,180 155,130  220,130", g: "glowRightCyan",   w: 1.5, op: 0.88 },
+          { d: "M 110,205 C 130,195 150,165  220,165", g: "glowRightBright", w: 2.1, op: 1.00 },
+
+          // Middle core
+          { d: "M 110,212 C 128,210 150,200  220,200", g: "glowRightCyan",   w: 2.3, op: 1.00 },
+          { d: "M 110,218 C 128,218 150,225  220,225", g: "glowRightBright", w: 2.2, op: 1.00 },
+          { d: "M 110,225 C 130,228 150,250  220,250", g: "glowRightCyan",   w: 2.0, op: 0.92 },
+
+          // Lower fan
+          { d: "M 110,235 C 132,240 155,285  220,285", g: "glowRightBlue",   w: 1.6, op: 0.85 },
+          { d: "M 110,245 C 135,255 160,320  220,320", g: "glowRightBright", w: 1.8, op: 0.95 },
+          { d: "M 110,255 C 140,270 165,355  220,355", g: "glowRightCyan",   w: 1.4, op: 0.72 },
+          { d: "M 110,265 C 140,285 165,385  220,385", g: "glowRightBlue",   w: 1.2, op: 0.60 },
+        ].map(({ d, g, w, op }, i) => (
+          <path key={`right-fiber-${i}`} d={d}
+                stroke={`url(#${g})`} strokeWidth={w} strokeOpacity={op} fill="none"
+                filter="url(#fiberGlow)"/>
+        ))}
+
+        {/* ── 4. STATIC GLOWING PARTICLES / NODES ── */}
+        {[
+          // Left points
+          { cx: 35,  cy: 90,  r: 2.2, fill: "#38bdf8", op: 0.85 },
+          { cx: 68,  cy: 145, r: 2.0, fill: "#06b6d4", op: 0.9  },
+          { cx: 48,  cy: 195, r: 2.4, fill: "#ffffff", op: 1.0  },
+          { cx: 80,  cy: 215, r: 2.2, fill: "#60a5fa", op: 0.95 },
+          { cx: 55,  cy: 265, r: 2.0, fill: "#38bdf8", op: 0.85 },
+          { cx: 38,  cy: 330, r: 2.2, fill: "#06b6d4", op: 0.8  },
+
+          // Center bar convergence points
+          { cx: 104, cy: 190, r: 2.6, fill: "#ffffff", op: 1.0  },
+          { cx: 106, cy: 215, r: 2.8, fill: "#e0f2fe", op: 1.0  },
+          { cx: 104, cy: 240, r: 2.6, fill: "#ffffff", op: 1.0  },
+
+          // Right points
+          { cx: 135, cy: 185, r: 2.2, fill: "#ffffff", op: 1.0  },
+          { cx: 165, cy: 125, r: 2.0, fill: "#38bdf8", op: 0.85 },
+          { cx: 155, cy: 230, r: 2.4, fill: "#60a5fa", op: 0.95 },
+          { cx: 175, cy: 290, r: 2.2, fill: "#06b6d4", op: 0.9  },
+          { cx: 185, cy: 350, r: 2.0, fill: "#38bdf8", op: 0.8  },
+        ].map(({ cx, cy, r, fill, op }, i) => (
+          <circle key={`particle-${i}`} cx={cx} cy={cy} r={r} fill={fill} opacity={op}
+                  filter="url(#intenseGlow)"/>
         ))}
       </svg>
-
-      {/* Floating doc icons on edges */}
-      {[{ top: '25%', right: 4 }, { bottom: '25%', left: 4 }].map((pos, i) => (
-        <div key={i} className="anim-float" style={{
-          animationDelay: `${i * 0.8}s`,
-          position: 'absolute', ...pos,
-          width: 30, height: 30, borderRadius: '50%',
-          background: 'rgba(255,255,255,0.88)',
-          border: '1px solid rgba(147,197,253,0.5)',
-          boxShadow: '0 2px 10px rgba(37,99,235,0.1)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10,
-        }}>
-          <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
-            <rect x="1.5" y="1" width="9" height="11" rx="1.5" stroke="#3b82f6" strokeWidth="1.1"/>
-            <line x1="3.5" y1="4.5" x2="9" y2="4.5" stroke="#3b82f6" strokeWidth="0.85"/>
-            <line x1="3.5" y1="6.5" x2="9" y2="6.5" stroke="#3b82f6" strokeWidth="0.85"/>
-            <line x1="3.5" y1="8.5" x2="6.5" y2="8.5" stroke="#3b82f6" strokeWidth="0.85"/>
-          </svg>
-        </div>
-      ))}
     </div>
   );
 }
