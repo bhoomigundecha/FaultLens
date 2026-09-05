@@ -111,3 +111,5 @@ scratch/
 .benchmarks/
 
 ARCHITECTURE.md
+AGENTS.md
+CLAUDE.md
