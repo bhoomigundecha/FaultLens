@@ -1,14 +1,6 @@
 'use client';
 import { useState, useEffect } from 'react';
 
-const NAV_LINKS = [
-  { label: 'Features',     href: '#features' },
-  { label: 'How it works', href: '#how-it-works' },
-  { label: 'Integrations', href: '#integrations' },
-  { label: 'Blog',         href: '#blog' },
-  { label: 'FAQs',         href: '#faqs' },
-];
-
 export default function Navbar() {
   const [scrolled, setScrolled] = useState(false);
   useEffect(() => {
@@ -54,21 +46,6 @@ export default function Navbar() {
           <span className="text-[15.5px] font-bold tracking-tight select-none"
                 style={{ color: '#0b1f3a' }}>FaultLens</span>
         </a>
-
-        {/* Links */}
-        <ul className="flex items-center gap-6 list-none m-0 p-0">
-          {NAV_LINKS.map(l => (
-            <li key={l.href}>
-              <a href={l.href}
-                 className="text-[13px] font-medium transition-colors duration-200"
-                 style={{ color: '#475569' }}
-                 onMouseEnter={e => (e.target.style.color = '#2563eb')}
-                 onMouseLeave={e => (e.target.style.color = '#475569')}>
-                {l.label}
-              </a>
-            </li>
-          ))}
-        </ul>
 
         {/* CTA */}
         <a href="/connect"

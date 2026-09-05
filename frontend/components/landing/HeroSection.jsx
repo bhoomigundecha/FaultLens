@@ -63,7 +63,7 @@ export default function HeroSection() {
       {/* Sub-link */}
       <p className="anim-fade-up d4" style={{ marginTop: '10px', fontSize: '12.5px', color: '#64748b' }}>
         or explore the{' '}
-        <a href="#demo"
+        <a href="/demo"
            style={{ color: '#2563eb', fontWeight: 600, textDecoration: 'underline' }}>
           ShopFlow demo
         </a>
