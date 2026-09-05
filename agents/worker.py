@@ -144,12 +144,34 @@ async def _poll_cycle(graph) -> None:
 
     logger.info(f"Screening {len(all_services)} active service(s) …")
 
+    # ── Cooldown check: don't re-trigger if a recent open incident exists ─────
+    recent_incidents = await pg_store.list_recent_incidents(limit=50)
+    from datetime import timedelta
+    COOLDOWN_MINUTES = 10
+    now = datetime.now(timezone.utc)
+    recently_triggered: set[str] = set()
+    for inc in recent_incidents:
+        created = inc.get("created_at")
+        if created is None:
+            continue
+        # asyncpg returns datetime objects; normalise tzinfo
+        if hasattr(created, "tzinfo") and created.tzinfo is None:
+            created = created.replace(tzinfo=timezone.utc)
+        if (now - created) < timedelta(minutes=COOLDOWN_MINUTES):
+            recently_triggered.add(inc["service_id"])
+
     for service_id in all_services:
         try:
             score = await _quick_screen(service_id)
             logger.debug(f"  {service_id}: pre-screen score={score:.3f}")
 
             if score >= ANOMALY_THRESHOLD:
+                if service_id in recently_triggered:
+                    logger.info(
+                        f"⏭  {service_id}: score={score:.3f} above threshold but "
+                        f"incident exists within {COOLDOWN_MINUTES}m cooldown — skipping"
+                    )
+                    continue
                 logger.info(
                     f"🚨 ANOMALY DETECTED: {service_id} (score={score:.3f}) — triggering workflow"
                 )

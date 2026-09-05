@@ -36,6 +36,7 @@ function normaliseIncident(raw) {
     log_anomalies:    safeParse(raw.log_anomalies,    []),
     trace_anomalies:  safeParse(raw.trace_anomalies,  []),
     ranked_suspects:  safeParse(raw.ranked_suspects,  []),
+    nodes_executed:   safeParse(raw.nodes_executed,   []),
   };
 }
 

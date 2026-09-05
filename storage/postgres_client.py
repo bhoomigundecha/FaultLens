@@ -176,7 +176,23 @@ async def get_incident(incident_id: str) -> dict[str, Any] | None:
     pool = await get_pool()
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
-            "SELECT * FROM incidents WHERE incident_id = $1", incident_id
+            """
+            SELECT i.*,
+                   ar.nodes_executed  AS nodes_executed,
+                   ar.status          AS run_status,
+                   ar.started_at      AS run_started_at,
+                   ar.finished_at     AS run_finished_at
+            FROM   incidents i
+            LEFT JOIN LATERAL (
+                SELECT nodes_executed, status, started_at, finished_at
+                FROM   agent_runs
+                WHERE  incident_id = i.incident_id
+                ORDER  BY started_at DESC
+                LIMIT  1
+            ) ar ON TRUE
+            WHERE  i.incident_id = $1
+            """,
+            incident_id,
         )
     return dict(row) if row else None
 
@@ -185,13 +201,27 @@ async def list_recent_incidents(
     service_id: str | None = None, limit: int = 20
 ) -> list[dict[str, Any]]:
     pool = await get_pool()
+    # Join the most-recent agent_run per incident so nodes_executed is always present
+    base = """
+        SELECT i.*,
+               ar.nodes_executed  AS nodes_executed,
+               ar.status          AS run_status,
+               ar.started_at      AS run_started_at,
+               ar.finished_at     AS run_finished_at
+        FROM   incidents i
+        LEFT JOIN LATERAL (
+            SELECT nodes_executed, status, started_at, finished_at
+            FROM   agent_runs
+            WHERE  incident_id = i.incident_id
+            ORDER  BY started_at DESC
+            LIMIT  1
+        ) ar ON TRUE
+    """
     if service_id:
-        query = (
-            "SELECT * FROM incidents WHERE service_id = $1 ORDER BY created_at DESC LIMIT $2"
-        )
+        query = base + " WHERE i.service_id = $1 ORDER BY i.created_at DESC LIMIT $2"
         args = [service_id, limit]
     else:
-        query = "SELECT * FROM incidents ORDER BY created_at DESC LIMIT $1"
+        query = base + " ORDER BY i.created_at DESC LIMIT $1"
         args = [limit]
     async with pool.acquire() as conn:
         rows = await conn.fetch(query, *args)

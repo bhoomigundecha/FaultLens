@@ -107,7 +107,6 @@ models/
 tmp/
 temp/
 scratch/
-
 .benchmarks/
 
 ARCHITECTURE.md
