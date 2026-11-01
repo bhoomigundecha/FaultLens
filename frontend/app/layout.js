@@ -9,13 +9,13 @@ const inter = Inter({
 });
 
 export const metadata = {
-  title: 'FaultLens — AI-Powered Incident Investigation',
+  title: 'FaultLens',
   description: 'Turning complex telemetry into clear answers.',
 };
 
 export default function RootLayout({ children }) {
   return (
-    <html lang="en" className={`min-h-full ${inter.variable}`}>
+    <html lang="en" className={`min-h-full ${inter.variable}`} suppressHydrationWarning>
       <body className="min-h-full">{children}</body>
     </html>
   );

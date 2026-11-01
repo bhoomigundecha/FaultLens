@@ -1,0 +1,106 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# FaultLens collector config (replaces the upstream config in compose.faultlens.yaml)
+#
+# vs upstream: no host_metrics / postgres / redis / nginx / prometheus scraping,
+# no span_metrics connector, no debug spam. Telemetry is batched so FaultLens
+# receives a few requests every 5 s instead of one per SDK export.
+# flagd's own telemetry is dropped (it is plumbing, not part of the shop's call graph).
+# ─────────────────────────────────────────────────────────────────────────────
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: ${env:OTEL_COLLECTOR_HOST}:${env:OTEL_COLLECTOR_PORT_GRPC}
+      http:
+        endpoint: ${env:OTEL_COLLECTOR_HOST}:${env:OTEL_COLLECTOR_PORT_HTTP}
+        cors:
+          allowed_origins: ["http://*", "https://*"]
+          allowed_headers: ["content-type", "traceparent", "baggage"]
+
+  # Per-container CPU % / memory % — lets FaultLens see memory-leak & OOM faults.
+  # Only shop containers matter; FaultLens's own Postgres and plumbing are excluded below.
+  docker_stats:
+    endpoint: unix:///var/run/docker.sock
+    collection_interval: 15s
+    metrics:
+      container.cpu.utilization:
+        enabled: true
+      container.memory.percent:
+        enabled: true
+
+processors:
+  memory_limiter:
+    check_interval: 5s
+    limit_percentage: 80
+    spike_limit_percentage: 25
+
+  # Drop plumbing noise before it reaches FaultLens:
+  #  - flagd's own telemetry, and every service's client calls TO flagd
+  #    (each request does several flag lookups — they'd swamp the call graph)
+  #  - container metrics for non-shop containers (FaultLens DB, collector, flagd)
+  #  - cumulative container counters (cpu ns, bytes, packets) — only the
+  #    utilisation/percent gauges and memory usage are kept
+  filter/drop_flagd:
+    error_mode: ignore
+    traces:
+      span:
+        - 'resource.attributes["service.name"] == "flagd"'
+        - 'attributes["server.address"] == "flagd"'
+        - 'IsMatch(name, "flagd\\.evaluation")'
+    metrics:
+      metric:
+        - 'resource.attributes["service.name"] == "flagd"'
+        - 'IsMatch(resource.attributes["container.name"], "^(faultlens-.*|otel-collector|flagd)$")'
+        - 'IsMatch(name, "^container\\.") and name != "container.cpu.utilization" and name != "container.memory.percent" and name != "container.memory.usage.total"'
+    logs:
+      log_record:
+        - 'resource.attributes["service.name"] == "flagd"'
+
+  # docker_stats has no service.name — map the container name onto it so
+  # FaultLens attributes container metrics to the right service.
+  transform/container_service_name:
+    error_mode: ignore
+    metric_statements:
+      - context: resource
+        statements:
+          - set(attributes["service.name"], attributes["container.name"]) where attributes["service.name"] == nil and attributes["container.name"] != nil
+
+  batch:
+    timeout: 5s
+    send_batch_size: 1024
+    send_batch_max_size: 2048
+
+exporters:
+  # One summary line per batch in `docker logs otel-collector` — useful during the demo.
+  debug:
+    verbosity: basic
+
+  otlphttp/faultlens:
+    traces_endpoint:  http://host.docker.internal:8000/otlp/v1/traces
+    metrics_endpoint: http://host.docker.internal:8000/otlp/v1/metrics
+    logs_endpoint:    http://host.docker.internal:8000/otlp/v1/logs
+    compression: none
+    timeout: 10s
+    retry_on_failure:
+      enabled: false
+    sending_queue:
+      enabled: true
+      queue_size: 50
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, filter/drop_flagd, batch]
+      exporters: [debug, otlphttp/faultlens]
+    metrics:
+      receivers: [otlp, docker_stats]
+      processors: [memory_limiter, filter/drop_flagd, transform/container_service_name, batch]
+      exporters: [debug, otlphttp/faultlens]
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, filter/drop_flagd, batch]
+      exporters: [debug, otlphttp/faultlens]
+  telemetry:
+    logs:
+      level: info

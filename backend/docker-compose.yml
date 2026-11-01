@@ -1,0 +1,61 @@
+version: "3.9"
+
+# ─── FaultLens V2 Backend ──────────────────────────────────────────────────────
+# Phase 1: FastAPI + PostgreSQL
+
+services:
+
+  # ─── PostgreSQL ─────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: faultlens-postgres
+    environment:
+      POSTGRES_USER: faultlens
+      POSTGRES_PASSWORD: faultlens
+      POSTGRES_DB: faultlens
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U faultlens -d faultlens"]
+      interval: 5s
+      timeout: 5s
+      start_period: 10s
+      retries: 10
+
+  # ─── FaultLens API ──────────────────────────────────────────────────────────
+  faultlens-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: faultlens-api
+    command: >
+      uvicorn app.main:app
+        --host 0.0.0.0
+        --port 8000
+        --reload
+        --log-level info
+    ports:
+      - "8000:8000"
+    env_file: .env
+    environment:
+      # Override DATABASE_URL for Docker networking (postgres → service name)
+      - DATABASE_URL=postgresql+asyncpg://faultlens:faultlens@postgres:5432/faultlens
+      - DATABASE_URL_SYNC=postgresql://faultlens:faultlens@postgres:5432/faultlens
+    volumes:
+      - .:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+
+volumes:
+  postgres_data:

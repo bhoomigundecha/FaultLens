@@ -1,0 +1,36 @@
+# Copyright The OpenTelemetry Authors
+# SPDX-License-Identifier: Apache-2.0
+
+# Extras/customization layer for the OTel Collector.
+# This file is always loaded last — it forwards telemetry to FaultLens.
+#
+# IMPORTANT: The OTel Collector merges config files but REPLACES arrays, not appends.
+# Upstream exporter names must be repeated to keep the default debug pipeline active.
+#
+# FaultLens Backend OTLP endpoint:
+#   The backend runs on the host at port 8000.
+#   Inside the collector container, the host is reachable via host.docker.internal.
+#   On Linux, add --add-host=host.docker.internal:host-gateway to the collector
+#   service in docker-compose if host.docker.internal is not available by default.
+
+exporters:
+  otlphttp/faultlens:
+    endpoint: http://host.docker.internal:8000
+    traces_endpoint:  http://host.docker.internal:8000/otlp/v1/traces
+    metrics_endpoint: http://host.docker.internal:8000/otlp/v1/metrics
+    logs_endpoint:    http://host.docker.internal:8000/otlp/v1/logs
+    compression: none
+    timeout: 5s
+    retry_on_failure:
+      enabled: false
+
+service:
+  pipelines:
+    traces:
+      # Repeat the upstream exporters so they remain active alongside FaultLens.
+      exporters: [debug, span_metrics, otlphttp/faultlens]
+    metrics:
+      receivers: [docker_stats, http_check/frontend-proxy, host_metrics, nginx, otlp, redis, postgresql, prometheus/ad, span_metrics]
+      exporters: [debug, otlphttp/faultlens]
+    logs:
+      exporters: [debug, otlphttp/faultlens]

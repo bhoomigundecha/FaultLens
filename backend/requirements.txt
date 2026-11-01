@@ -1,0 +1,27 @@
+# Core
+fastapi==0.115.5
+uvicorn[standard]==0.32.1
+greenlet==3.1.1          # required by SQLAlchemy async (not always auto-installed)
+
+# Configuration
+pydantic==2.10.3
+pydantic-settings==2.6.1
+python-dotenv==1.0.1
+
+# Database
+sqlalchemy==2.0.36
+asyncpg==0.30.0
+alembic==1.14.0
+psycopg2-binary==2.9.10
+
+# Telemetry (Phase 3+) — parse OTLP protobuf payloads from the collector
+opentelemetry-proto==1.29.0
+protobuf==5.29.3
+
+# AI / LLM (Phase 17) — Groq inference API
+groq==0.13.1
+
+# Testing
+httpx==0.28.1
+pytest==8.3.4
+pytest-asyncio==0.24.0
